@@ -311,6 +311,7 @@ validate_expr(expr_ty exp, expr_context_ty ctx)
         return validate_expr(exp->v.NamedExpr.value, Load);
     /* This last case doesn't have any checking. */
     case Name_kind:
+    case Range_kind:
         return 1;
     }
     PyErr_SetString(PyExc_SystemError, "unexpected expression");

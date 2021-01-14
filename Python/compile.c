@@ -3768,6 +3768,17 @@ assignment_helper(struct compiler *c, asdl_expr_seq *elts)
 }
 
 static int
+compiler_range(struct compiler *c, expr_ty e)
+{
+    ADDOP_NAME(c, LOAD_NAME, PyUnicode_FromString("range"), names);
+    ADDOP_LOAD_CONST(c, e->v.Range.left->v.Constant.value);
+    ADDOP_LOAD_CONST(c, e->v.Range.right->v.Constant.value);
+    ADDOP_I(c, CALL_FUNCTION, 2);
+    return 1;
+}
+
+
+static int
 compiler_list(struct compiler *c, expr_ty e)
 {
     asdl_expr_seq *elts = e->v.List.elts;
@@ -5096,6 +5107,8 @@ compiler_visit_expr1(struct compiler *c, expr_ty e)
         return compiler_list(c, e);
     case Tuple_kind:
         return compiler_tuple(c, e);
+    case Range_kind:
+        return compiler_range(c, e);
     }
     return 1;
 }

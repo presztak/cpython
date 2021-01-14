@@ -113,6 +113,7 @@ struct ast_state {
     PyObject *RShift_singleton;
     PyObject *RShift_type;
     PyObject *Raise_type;
+    PyObject *Range_type;
     PyObject *Return_type;
     PyObject *SetComp_type;
     PyObject *Set_type;
@@ -370,6 +371,7 @@ void _PyAST_Fini(PyInterpreterState *interp)
     Py_CLEAR(state->RShift_singleton);
     Py_CLEAR(state->RShift_type);
     Py_CLEAR(state->Raise_type);
+    Py_CLEAR(state->Range_type);
     Py_CLEAR(state->Return_type);
     Py_CLEAR(state->SetComp_type);
     Py_CLEAR(state->Set_type);
@@ -826,6 +828,10 @@ static const char * const List_fields[]={
 static const char * const Tuple_fields[]={
     "elts",
     "ctx",
+};
+static const char * const Range_fields[]={
+    "left",
+    "right",
 };
 static const char * const Slice_fields[]={
     "lower",
@@ -1471,6 +1477,7 @@ init_types(struct ast_state *state)
         "     | Name(identifier id, expr_context ctx)\n"
         "     | List(expr* elts, expr_context ctx)\n"
         "     | Tuple(expr* elts, expr_context ctx)\n"
+        "     | Range(expr left, expr right)\n"
         "     | Slice(expr? lower, expr? upper, expr? step)");
     if (!state->expr_type) return 0;
     if (!add_attributes(state, state->expr_type, expr_attributes, 4)) return 0;
@@ -1594,6 +1601,10 @@ init_types(struct ast_state *state)
                                   Tuple_fields, 2,
         "Tuple(expr* elts, expr_context ctx)");
     if (!state->Tuple_type) return 0;
+    state->Range_type = make_type(state, "Range", state->expr_type,
+                                  Range_fields, 2,
+        "Range(expr left, expr right)");
+    if (!state->Range_type) return 0;
     state->Slice_type = make_type(state, "Slice", state->expr_type,
                                   Slice_fields, 3,
         "Slice(expr? lower, expr? upper, expr? step)");
@@ -3245,6 +3256,34 @@ Tuple(asdl_expr_seq * elts, expr_context_ty ctx, int lineno, int col_offset,
 }
 
 expr_ty
+Range(expr_ty left, expr_ty right, int lineno, int col_offset, int end_lineno,
+      int end_col_offset, PyArena *arena)
+{
+    expr_ty p;
+    if (!left) {
+        PyErr_SetString(PyExc_ValueError,
+                        "field 'left' is required for Range");
+        return NULL;
+    }
+    if (!right) {
+        PyErr_SetString(PyExc_ValueError,
+                        "field 'right' is required for Range");
+        return NULL;
+    }
+    p = (expr_ty)PyArena_Malloc(arena, sizeof(*p));
+    if (!p)
+        return NULL;
+    p->kind = Range_kind;
+    p->v.Range.left = left;
+    p->v.Range.right = right;
+    p->lineno = lineno;
+    p->col_offset = col_offset;
+    p->end_lineno = end_lineno;
+    p->end_col_offset = end_col_offset;
+    return p;
+}
+
+expr_ty
 Slice(expr_ty lower, expr_ty upper, expr_ty step, int lineno, int col_offset,
       int end_lineno, int end_col_offset, PyArena *arena)
 {
@@ -4437,6 +4476,21 @@ ast2obj_expr(struct ast_state *state, void* _o)
         value = ast2obj_expr_context(state, o->v.Tuple.ctx);
         if (!value) goto failed;
         if (PyObject_SetAttr(result, state->ctx, value) == -1)
+            goto failed;
+        Py_DECREF(value);
+        break;
+    case Range_kind:
+        tp = (PyTypeObject *)state->Range_type;
+        result = PyType_GenericNew(tp, NULL, NULL);
+        if (!result) goto failed;
+        value = ast2obj_expr(state, o->v.Range.left);
+        if (!value) goto failed;
+        if (PyObject_SetAttr(result, state->left, value) == -1)
+            goto failed;
+        Py_DECREF(value);
+        value = ast2obj_expr(state, o->v.Range.right);
+        if (!value) goto failed;
+        if (PyObject_SetAttr(result, state->right, value) == -1)
             goto failed;
         Py_DECREF(value);
         break;
@@ -8537,6 +8591,46 @@ obj2ast_expr(struct ast_state *state, PyObject* obj, expr_ty* out, PyArena*
         if (*out == NULL) goto failed;
         return 0;
     }
+    tp = state->Range_type;
+    isinstance = PyObject_IsInstance(obj, tp);
+    if (isinstance == -1) {
+        return 1;
+    }
+    if (isinstance) {
+        expr_ty left;
+        expr_ty right;
+
+        if (_PyObject_LookupAttr(obj, state->left, &tmp) < 0) {
+            return 1;
+        }
+        if (tmp == NULL) {
+            PyErr_SetString(PyExc_TypeError, "required field \"left\" missing from Range");
+            return 1;
+        }
+        else {
+            int res;
+            res = obj2ast_expr(state, tmp, &left, arena);
+            if (res != 0) goto failed;
+            Py_CLEAR(tmp);
+        }
+        if (_PyObject_LookupAttr(obj, state->right, &tmp) < 0) {
+            return 1;
+        }
+        if (tmp == NULL) {
+            PyErr_SetString(PyExc_TypeError, "required field \"right\" missing from Range");
+            return 1;
+        }
+        else {
+            int res;
+            res = obj2ast_expr(state, tmp, &right, arena);
+            if (res != 0) goto failed;
+            Py_CLEAR(tmp);
+        }
+        *out = Range(left, right, lineno, col_offset, end_lineno,
+                     end_col_offset, arena);
+        if (*out == NULL) goto failed;
+        return 0;
+    }
     tp = state->Slice_type;
     isinstance = PyObject_IsInstance(obj, tp);
     if (isinstance == -1) {
@@ -9906,6 +10000,9 @@ astmodule_exec(PyObject *m)
         return -1;
     }
     if (PyModule_AddObjectRef(m, "Tuple", state->Tuple_type) < 0) {
+        return -1;
+    }
+    if (PyModule_AddObjectRef(m, "Range", state->Range_type) < 0) {
         return -1;
     }
     if (PyModule_AddObjectRef(m, "Slice", state->Slice_type) < 0) {

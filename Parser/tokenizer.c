@@ -1500,6 +1500,9 @@ tok_get(struct tok_state *tok, const char **p_start, const char **p_end)
             }
             else {
                 tok_backup(tok, c);
+                *p_start = tok->start;
+                *p_end = tok->cur;
+                return DOUBLEDOT;
             }
             tok_backup(tok, '.');
         }
@@ -1638,6 +1641,13 @@ tok_get(struct tok_state *tok, const char **p_start, const char **p_end)
                 /* Accept floating point numbers. */
                 if (c == '.') {
                     c = tok_nextc(tok);
+		    if (c == '.') {
+                        tok_backup(tok, '.');
+                        tok_backup(tok, '.');
+                        *p_start = tok->start;
+                        *p_end = tok->cur;
+                        return NUMBER;
+		    }
         fraction:
                     /* Fraction */
                     if (isdigit(c)) {

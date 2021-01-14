@@ -129,6 +129,10 @@
 
    Token value for ``"**"``.
 
+.. data:: DOUBLEDOT
+
+   Token value for ``".."``.
+
 .. data:: PLUSEQUAL
 
    Token value for ``"+="``.

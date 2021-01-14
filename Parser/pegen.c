@@ -1423,6 +1423,9 @@ _PyPegen_seq_count_dots(asdl_seq *seq)
             case ELLIPSIS:
                 number_of_dots += 3;
                 break;
+            case DOUBLEDOT:
+                number_of_dots += 2;
+                break;
             case DOT:
                 number_of_dots += 1;
                 break;
